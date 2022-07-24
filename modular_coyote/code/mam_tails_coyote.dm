@@ -173,3 +173,4 @@
 	icon_state = "vap"
 	icon = 'modular_coyote/icons/mob/mam_tails.dmi'
 
+// cum cum cum cum cum cum
