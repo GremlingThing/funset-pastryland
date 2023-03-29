@@ -45,14 +45,16 @@
 				ty--
 			DT = locate(tx, ty, destination_z)
 
-		var/atom/movable/AM = A.pulling
-		A.forceMove(DT)
-		if(AM)
-			var/turf/T = get_step(A.loc,turn(A.dir, 180))
-			AM.can_be_z_moved = FALSE
-			AM.forceMove(T)
-			A.start_pulling(AM)
-			AM.can_be_z_moved = TRUE
+		A.zMove(DOWN, A.loc, DT, ZMOVE_CHECK_PULLEDBY)
+
+		//var/atom/movable/AM = A.pulling
+		//A.forceMove(DT)
+		// if(AM)
+		// 	var/turf/T = get_step(A.loc,turn(A.dir, 180))
+		// 	AM.can_be_z_moved = FALSE
+		// 	AM.forceMove(T)
+		// 	A.start_pulling(AM)
+		// 	AM.can_be_z_moved = TRUE
 
 		//now we're on the new z_level, proceed the space drifting
 		stoplag()//Let a diagonal move finish, if necessary
