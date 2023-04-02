@@ -1,3 +1,8 @@
+/datum/youtubeLink
+	var/link
+	var/name
+	var/start
+	var/end
 /obj/machinery/jukebox
 	name = "jukebox"
 	desc = "A classic music player."
@@ -10,28 +15,20 @@
 	var/list/rangers = list()
 	var/stop = 0
 	var/volume = 70
-	var/datum/track/selection = null
-
-/obj/machinery/jukebox/disco
-	name = "radiant dance machine mark IV"
-	desc = "The first three prototypes were discontinued after mass casualty incidents."
-	icon_state = "disco"
-	req_access = list(ACCESS_ENGINE)
-	anchored = FALSE
-	var/list/spotlights = list()
-	var/list/sparkles = list()
-
-/obj/machinery/jukebox/disco/indestructible
-	name = "radiant dance machine mark V"
-	desc = "Now redesigned with data gathered from the extensive disco and plasma research."
-	req_access = null
-	anchored = TRUE
-	resistance_flags = INDESTRUCTIBLE | LAVA_PROOF | FIRE_PROOF | UNACIDABLE | ACID_PROOF
-	flags_1 = NODECONSTRUCT_1
+	var/datum/youtubeLink/song = null
+	var/list/client/chadListeners = null
 
 /obj/machinery/jukebox/Destroy()
-	dance_over()
+	StopBroadcasting()
 	return ..()
+
+/obj/machinery/jukebox/process() // Whoever put this on the bottom of the file, I will kill you <3
+	if(active && world.time >= stop)
+		active = FALSE
+		StopBroadcasting()
+		playsound(src,'sound/machines/terminal_off.ogg',50,1)
+		update_icon()
+		stop = world.time + 100
 
 /obj/machinery/jukebox/attackby(obj/item/O, mob/user, params)
 	if(!active && !(flags_1 & NODECONSTRUCT_1))
@@ -60,10 +57,6 @@
 		to_chat(user,span_warning("Error: Access Denied."))
 		user.playsound_local(src, 'sound/misc/compiler-failure.ogg', 25, TRUE)
 		return UI_CLOSE
-	if(!SSjukeboxes.songs.len && !isobserver(user))
-		to_chat(user,span_warning("Error: No music tracks have been authorized for your station. Petition Central Command to resolve this issue."))
-		playsound(src, 'sound/misc/compiler-failure.ogg', 25, TRUE)
-		return UI_CLOSE
 	return ..()
 
 /obj/machinery/jukebox/ui_interact(mob/user, datum/tgui/ui)
@@ -76,18 +69,13 @@
 	var/list/data = list()
 	data["active"] = active
 	data["songs"] = list()
-	for(var/datum/track/S in SSjukeboxes.songs)
-		var/list/track_data = list(
-			name = S.song_name
-		)
-		data["songs"] += list(track_data)
 	data["track_selected"] = null
 	data["track_length"] = null
 	data["track_beat"] = null
-	if(selection)
-		data["track_selected"] = selection.song_name
-		data["track_length"] = DisplayTimeText(selection.song_length)
-		data["track_beat"] = selection.song_beat
+	if(song)
+		data["track_selected"] = song.name
+		data["track_length"] = DisplayTimeText((song.end - song.start))
+		data["track_beat"] = song.link
 	data["volume"] = volume
 	return data
 
@@ -110,45 +98,47 @@
 				return TRUE
 			else
 				stop = 0
+				StopBroadcasting()
 				return TRUE
 		if("select_track")
 			if(active)
 				to_chat(usr, span_warning("Error: You cannot change the song until the current one is over."))
 				return
-			var/list/available = list()
-			for(var/datum/track/S in SSjukeboxes.songs)
-				available[S.song_name] = S
-			var/selected = params["track"]
-			if(QDELETED(src) || !selected || !istype(available[selected], /datum/track))
-				return
-			selection = available[selected]
-			return TRUE
+			return HandleSelectTrack(usr)
 		if("set_volume")
 			var/new_volume = params["volume"]
 			if(new_volume  == "reset")
 				volume = initial(volume)
-				return TRUE
 			else if(new_volume == "min")
 				volume = 0
-				return TRUE
 			else if(new_volume == "max")
 				volume = 100
-				return TRUE
 			else if(text2num(new_volume) != null)
 				volume = text2num(new_volume)
-				return TRUE
-
+			return UpdateVolume()
+			
 /obj/machinery/jukebox/proc/activate_music()
-	var/jukeboxslottotake = SSjukeboxes.addjukebox(src, selection, 2)
-	if(jukeboxslottotake)
-		active = TRUE
-		update_icon()
-		START_PROCESSING(SSobj, src)
-		stop = world.time + selection.song_length
-		return TRUE
-	else
-		return FALSE
+	active = TRUE
+	update_icon()
+	START_PROCESSING(SSobj, src)
+	stop = world.time + song.end
+	return TRUE
 
+/obj/machinery/jukebox/proc/StopBroadcasting()
+	for(var/client/C in chadListeners)
+		C?.tgui_panel.stop_music()
+	return TRUE
+
+
+/obj/machinery/jukebox/proc/HandleSelectTrack(mob/user)
+	// this is the stupid complicated code for getting their YT URL.
+	return TRUE
+
+/obj/machinery/jukebox/proc/UpdateVolume()
+	for(var/client/C in chadListeners)
+		C.admin_music_volume = volume
+	return TRUE
+/*
 /obj/machinery/jukebox/disco/activate_music()
 	..()
 	dance_setup()
@@ -438,18 +428,10 @@
 	QDEL_LIST(spotlights)
 	QDEL_LIST(sparkles)
 
-/obj/machinery/jukebox/process()
-	if(active && world.time >= stop)
-		active = FALSE
-		dance_over()
-		playsound(src,'sound/machines/terminal_off.ogg',50,1)
-		update_icon()
-		stop = world.time + 100
-
-
 /obj/machinery/jukebox/disco/process()
 	. = ..()
 	if(active)
 		for(var/mob/living/M in rangers)
 			if(prob(5+(allowed(M)*4)) && CHECK_MOBILITY(M, MOBILITY_MOVE))
 				dance(M)
+*/
