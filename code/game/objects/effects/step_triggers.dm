@@ -246,9 +246,13 @@
 	
 	var/mob/M = A
 	
+	if(isobserver(M))
+		return // don't give the prompt to ghosts.
+
 	if(M.client)
 		if(M.ckey in ckeyList)	return // Already answered and logged. No need for more input.
-		
+		ckeyList += M.ckey
+
 		var/playerInput
 		if(choices.len)
 			playerInput = input(M, question, title) as null|anything in choices
@@ -263,4 +267,3 @@
 		message_admins(msg)
 		log_admin(msg)
 
-		ckeyList += M.ckey
