@@ -45,8 +45,6 @@
 /mob/living/simple_animal/trader_npc/Initialize()
 	. = ..()
 	
-
-
 /mob/living/simple_animal/trader_npc/ComponentInitialize()
 	if(isnull(start_pos_x) || isnull(start_pos_y))
 		start_pos_x = loc.x
@@ -70,26 +68,36 @@
 	SEND_SIGNAL(src, COMSIG_NPC_UPDATE)
 	. = ..()
 
-
 /mob/living/simple_animal/trader_npc/handle_automated_movement() // Who asked you to WALK? >:(
 	return
 
 /mob/living/simple_animal/trader_npc/handle_automated_speech(override) // Silence, vermin.
 	return
 
+// This is NOT clean
+// I just wanted to get it done, reminding myself on BYOND and whatnot, it's been a few years!
+// Made specifically for trading with NPCs, we can probs modularise this into components, but the lack of AI controllers makes me CRIII
+
 /datum/component/trader_npc
 	// configuration vars
 	var/roam_area = FALSE // if true, will only wander in the area it's spawned in.
 	var/roam_range = -1 // range from where it's reference tile is located, will only wander in those bounds
 	var/npc_move_speed = 0.4 SECONDS
+	var/wander_move_multiplier = 3 // 3x slower than walking back.
 	var/timer_new_customer = 2 MINUTES
+
+	// some flufferoni
+	var/busy_chance = 20
+	var/wait_delay_min = 1 SECONDS
+	var/wait_delay_max = 8 SECONDS
 	
 	// stuff you shouldn't configure..
 	var/npc_status = NPC_IDLE
 	var/seen_people = FALSE
+	var/greeted = FALSE
 
 	var/datum/move_loop/move/return_loop
-	var/datum/move_loop/move/random_loop
+	var/datum/move_loop/move/wander_loop
 
 	var/turf_ref
 	var/area_ref
@@ -121,17 +129,33 @@
 
 /datum/component/trader_npc/proc/process_ai()
 	if(npc_status == NPC_IDLE)
-		face_closest_carbon()
+		var/mob/living/L = face_closest_carbon()
 		
+		if(!greeted && seen_people)
+			INVOKE_ASYNC(parent_ref,TYPE_PROC_REF(/mob/living, emote), "me", EMOTE_VISIBLE, "waves at [L].")
+			addtimer(CALLBACK(parent_ref,TYPE_PROC_REF(/atom/movable, say), "Welcome, customer!"), rand(0.3 SECONDS, 1.2 SECONDS)) // Hate this, but I wanted to add a short delay after the emote.
+			greeted = TRUE
+
 		if(!seen_people)
 			npc_status = NPC_ROAM
 	
 	if(npc_status == NPC_ROAM)
-		// wander
+		if(!wander_loop)
+			wander_loop = SSmove_manager.move_rand(parent_ref, GLOB.cardinals, list(area_ref), npc_move_speed * wander_move_multiplier)
+
+		if(seen_people)
+			if(prob(20))
+				parent_ref.say("One moment!")
+				addtimer(CALLBACK(src,PROC_REF(return_to_position), turf_ref), rand(wait_delay_min, wait_delay_max))
+			else
+				return_to_position(turf_ref)
+		
+
 		// chance to emote?
 		// listen for customer
+		
 		// return if customer present
-	
+
 
 	if(!return_loop)
 		var/returnCheck = FALSE
@@ -147,33 +171,31 @@
 		if(returnCheck)
 			return_to_position(turf_ref)
 
-/datum/component/trader_npc/proc/notice_people(mob/living/L as mob)
-	// , TIMER_UNIQUE|TIMER_OVERRIDE
+/datum/component/trader_npc/proc/notice_people()
 	seen_people = TRUE
-
-	INVOKE_ASYNC(parent_ref,TYPE_PROC_REF(/mob/living, emote), "me", EMOTE_VISIBLE, "waves at [L].")
-	addtimer(CALLBACK(parent_ref,TYPE_PROC_REF(/atom/movable, say), "Welcome, customer!"), rand(0.3 SECONDS, 1.2 SECONDS)) // Hate this, but I wanted to add a short delay after the emote.
 
 /datum/component/trader_npc/proc/reset_noticed_people()
 	seen_people = FALSE
+	greeted = FALSE
 
 /datum/component/trader_npc/proc/face_closest_carbon()
-	var/mob/M = parent
-
-	var/mob/living/closest_person = get_closest_atom(/mob/living, oviewers(5, M), M)
+	var/mob/living/closest_person = get_closest_atom(/mob/living, oviewers(5, parent_ref), parent_ref)
 
 	if(closest_person)
-		addtimer(CALLBACK(src,PROC_REF(reset_noticed_people)), timer_new_customer, TIMER_UNIQUE|TIMER_OVERRIDE)
-		if(!seen_people)
-			notice_people(closest_person)
+		if(closest_person.stat == CONSCIOUS)
+			addtimer(CALLBACK(src,PROC_REF(reset_noticed_people)), timer_new_customer, TIMER_UNIQUE|TIMER_OVERRIDE)
+			if(!seen_people)
+				notice_people()
 
-		M.face_atom(closest_person)
+		parent_ref.face_atom(closest_person) // I like to seperate this, making the AI acknowledge things being tossed at them which are unconscious
+		return closest_person
 
 // Return back to spot!
 /datum/component/trader_npc/proc/return_to_position()
-	var/atom/movable/AM = parent
-	
-	return_loop = SSmove_manager.jps_move(moving = AM, chasing = turf_ref, delay = npc_return_speed, repath_delay = 10 SECONDS, timeout = 1 MINUTES, flags = MOVEMENT_LOOP_START_FAST)
+	if(wander_loop)
+		qdel(wander_loop)
+
+	return_loop = SSmove_manager.jps_move(moving = parent_ref, chasing = turf_ref, delay = npc_move_speed, repath_delay = 10 SECONDS, timeout = 1 MINUTES, flags = MOVEMENT_LOOP_START_FAST)
 
 	if(!return_loop)
 		return
@@ -198,6 +220,7 @@
 /datum/component/trader_npc/proc/return_ondeath(datum/source)
 	SIGNAL_HANDLER
 	return_loop = null
+	npc_status = NPC_IDLE
 	UnregisterSignal(parent, list(COMSIG_MOVABLE_MOVED))
 
 
@@ -213,6 +236,5 @@
 			qdel(return_loop)
 			npc_status = NPC_IDLE
 			SEND_SIGNAL(parent, COMSIG_NPC_RETURN_FINISHED)
-
 
 	// to do: maybe make idle chatter?
