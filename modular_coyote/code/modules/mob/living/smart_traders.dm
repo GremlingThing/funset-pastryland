@@ -7,7 +7,98 @@
 #define COMSIG_NPC_RETURN "npc_return"
 #define COMSIG_NPC_RETURN_FINISHED "npc_return_finished"
 #define COMSIG_NPC_WANDER "npc_wander"
+#define COMSIG_NPC_SEEN_PERSON "npc_seen_person"
+#define COMSIG_NPC_ALERT_SOUND "npc_alert_sound"
 
+/obj/effect/spawner/trader_npc
+	name = "trader spawner"
+	icon = 'modular_coyote/icons/objects/misc.dmi'
+	
+	// Mob vars
+	var/npc_name = "Grem Doe"
+	var/npc_desc
+	var/npc_icon_state
+	var/npc_icon
+	
+	// Component behaviour vars
+	var/roam_area = FALSE // if true, will only wander in the area it's spawned in.
+	var/roam_range = 5 // range from where it's reference tile is located, will only wander in those bounds
+	var/npc_move_speed = 0.4 SECONDS
+	var/wander_move_multiplier = 3 // 3x slower than walking back.
+	var/timer_new_customer = 2 MINUTES
+	var/list/alert_tags = list("all")// Only listen to specific tags (used for a bell)
+
+	var/list/locale = list(
+		"welcome" = list("Welcome, Customer!", "Hi!", "What can I do for you?")
+		"busy" = list("Give me a second!", "One moment...", "Gimme a few!", "Sec!", "Hang on please!")
+		"back2work" = list("Right..", "Back to work..!", "Ugh, no more customers?", "No more?")
+		"purchase" = list("Pleasure doing business!", "Remember, no refunds!", "Wise choice!")
+		"idle_chatter" = list("I am unused!", "Can't think of how to apply this!")
+	)
+
+	// some flufferoni
+	var/busy_chance = 20
+	var/wait_delay_min = 1 SECONDS
+	var/wait_delay_max = 8 SECONDS
+
+	// location refs, safe to modify in mapping if you want to change their starting point, otherwise, the place spawned is it's starting position
+	var/start_pos_x
+	var/start_pos_y
+	
+	// try to avoid changing this, might mess up in future.
+	var/area_ref
+	var/turf_ref
+
+
+	var/mob_type = /mob/living/simple_animal/trader_npc
+
+/obj/effect/spawner/trader_npc/Initialize()
+	. = ..()
+
+	if(isnull(start_pos_x) || isnull(start_pos_y))
+		start_pos_x = loc.x
+		start_pos_y = loc.y
+		turf_ref = get_turf(loc)
+	
+	area_ref = get_area(get_turf(loc))
+	if(!turf_ref)
+		var/turf/T = locate(start_pos_x, start_pos_y, loc.z)
+
+		if(isnull(T))
+			WARNING("Cannot find turf located at [start_pos_x], [start_pos_y] for NPC: [npc_name], deleting them..") // check appropriate error warning, might be using wrong one
+			return INITIALIZE_HINT_QDEL
+		
+		turf_ref = T
+	
+	var/mob/M = new mob_type(get_turf(loc))
+
+	if(!M)
+		WARNING("Failed to spawn NPC at [start_pos_x], [start_pos_y] for NPC: [npc_name], deleting them..") 
+		return INITIALIZE_HINT_QDEL
+
+	SetMobValues(M)
+	
+	var/datum/component/trader_npc/C = M.AddComponent(/datum/component/trader_npc, turf_ref, roam_area ? area_ref : null, roam_area)
+
+	SetComponentValues(C)
+
+	return INITIALIZE_HINT_QDEL
+
+/obj/effect/spawner/trader_npc/proc/SetMobValues(mob/M)
+	M.name = npc_name
+
+/obj/effect/spawner/trader_npc/proc/SetComponentValues(datum/component/trader_npc/C)
+	C.roam_area = roam_area
+	C.roam_range = roam_range
+	C.npc_move_speed = npc_move_speed
+	C.wander_move_multiplier = wander_move_multiplier
+	C.timer_new_customer = timer_new_customer
+
+	if(LAZYLEN(alert_tags))
+		C.alert_tags = alert_tags
+
+	if(LAZYLEN(locale))
+		C.locale = locale
 
 
 /mob/living/simple_animal/trader_npc
@@ -32,36 +123,11 @@
 	//move_resist = MOVE_FORCE_VERY_STRONG
 	can_be_z_moved = FALSE
 
-	// location refs, safe to modify in mapping if you want to change their starting point, otherwise, the place spawned is it's starting position
-	var/start_pos_x
-	var/start_pos_y
-
-	// try to avoid changing this, might mess up in future.
-	var/area_ref
-	var/turf_ref
-
-	var/roam_area = FALSE // if true, will only wander in the area it's spawned in.
 
 /mob/living/simple_animal/trader_npc/Initialize()
 	. = ..()
 	
 /mob/living/simple_animal/trader_npc/ComponentInitialize()
-	if(isnull(start_pos_x) || isnull(start_pos_y))
-		start_pos_x = loc.x
-		start_pos_y = loc.y
-		turf_ref = get_turf(loc)
-	
-	area_ref = get_area(get_turf(loc))
-	if(!turf_ref)
-		var/turf/T = locate(start_pos_x, start_pos_y, loc.z)
-
-		if(isnull(T))
-			WARNING("Cannot find turf located at [start_pos_x], [start_pos_y] for NPC: [name], deleting them..") // check appropriate error warning, might be using wrong one
-			return INITIALIZE_HINT_QDEL
-		
-		turf_ref = T
-	
-	AddComponent(/datum/component/trader_npc, turf_ref, roam_area ? area_ref : null, roam_area)
 	. = ..()
 
 /mob/living/simple_animal/trader_npc/handle_automated_action()
@@ -80,11 +146,20 @@
 
 /datum/component/trader_npc
 	// configuration vars
-	var/roam_area = FALSE // if true, will only wander in the area it's spawned in.
+	var/roam_area = TRUE // if true, will only wander in the area it's spawned in.
 	var/roam_range = -1 // range from where it's reference tile is located, will only wander in those bounds
 	var/npc_move_speed = 0.4 SECONDS
 	var/wander_move_multiplier = 3 // 3x slower than walking back.
 	var/timer_new_customer = 2 MINUTES
+	var/list/alert_tags = list("all")// Only listen to specific tags (used for a bell)
+
+	var/list/locale = list(
+		"welcome" = list("Welcome, Customer!", "Hi!", "What can I do for you?")
+		"busy" = list("Give me a second!", "One moment...", "Gimme a few!", "Sec!", "Hang on please!")
+		"back2work" = list("Right..", "Back to work..!", "Ugh, no more customers?", "No more?")
+		"purchase" = list("Pleasure doing business!", "Remember, no refunds!", "Wise choice!")
+		"idle_chatter" = list("I am unused!", "Can't think of how to apply this!")
+	)
 
 	// some flufferoni
 	var/busy_chance = 20
@@ -118,6 +193,8 @@
 	roam_range = wander_range
 
 	RegisterSignal(parent, COMSIG_NPC_RETURN, PROC_REF(return_to_position), turf_ref)
+	RegisterSignal(parent, COMSIG_NPC_SEEN_PERSON, PROC_REF(notice_people))
+	RegisterSignal(parent, COMSIG_NPC_ALERT_SOUND, PROC_REF(notice_people))
 
 /datum/component/trader_npc/RegisterWithParent()
 	. = ..()
@@ -128,36 +205,39 @@
 	UnregisterSignal(parent_ref, COMSIG_NPC_UPDATE)
 
 /datum/component/trader_npc/proc/process_ai()
+	var/atoms = oview(5, parent_ref)
+	if(LAZYLEN(atoms))
+		for(var/mob/living/L in atoms)
+			if(isplayer(L) && L.stat == CONSCIOUS )
+				notice_people(L)
+	
+	// IDLE
 	if(npc_status == NPC_IDLE)
-		var/mob/living/L = face_closest_carbon()
+		var/mob/living/L = face_closest_carbon(atoms)
 		
 		if(!greeted && seen_people)
 			INVOKE_ASYNC(parent_ref,TYPE_PROC_REF(/mob/living, emote), "me", EMOTE_VISIBLE, "waves at [L].")
-			addtimer(CALLBACK(parent_ref,TYPE_PROC_REF(/atom/movable, say), "Welcome, customer!"), rand(0.3 SECONDS, 1.2 SECONDS)) // Hate this, but I wanted to add a short delay after the emote.
+			addtimer(CALLBACK(parent_ref,TYPE_PROC_REF(/atom/movable, say), "[pick(locale["welcome"])]"), rand(0.5 SECONDS, 2 SECONDS)) // Hate this, but I wanted to add a short delay after the emote.
 			greeted = TRUE
 
 		if(!seen_people)
 			npc_status = NPC_ROAM
+			parent_ref.say("[pick(locale["back2work"])]")
 	
+	// ROAMING
 	if(npc_status == NPC_ROAM)
 		if(!wander_loop)
 			wander_loop = SSmove_manager.move_rand(parent_ref, GLOB.cardinals, list(area_ref), npc_move_speed * wander_move_multiplier)
 
 		if(seen_people)
-			if(prob(20))
-				parent_ref.say("One moment!")
+			if(prob(busy_chance))
+				parent_ref.say("[pick(locale["busy"])]")
 				addtimer(CALLBACK(src,PROC_REF(return_to_position), turf_ref), rand(wait_delay_min, wait_delay_max))
 			else
 				return_to_position(turf_ref)
 		
 
-		// chance to emote?
-		// listen for customer
-		
-		// return if customer present
-
-
-	if(!return_loop)
+	if(!return_loop || QDELETED(return_loop))
 		var/returnCheck = FALSE
 
 		if(roam_range > 0)
@@ -171,15 +251,20 @@
 		if(returnCheck)
 			return_to_position(turf_ref)
 
-/datum/component/trader_npc/proc/notice_people()
-	seen_people = TRUE
+/datum/component/trader_npc/proc/notice_people(mob/living/user, obj/alertSource, tag)
+	if(tag && LAZYLEN(alert_tags))
+		if(tag in alert_tags)
+			seen_people = TRUE
+			return
+	else
+		seen_people = TRUE
 
 /datum/component/trader_npc/proc/reset_noticed_people()
 	seen_people = FALSE
 	greeted = FALSE
 
-/datum/component/trader_npc/proc/face_closest_carbon()
-	var/mob/living/closest_person = get_closest_atom(/mob/living, oviewers(5, parent_ref), parent_ref)
+/datum/component/trader_npc/proc/face_closest_carbon(list/atoms)
+	var/mob/living/closest_person = get_closest_atom(/mob/living, atoms, parent_ref)
 
 	if(closest_person)
 		if(closest_person.stat == CONSCIOUS)
@@ -194,6 +279,7 @@
 /datum/component/trader_npc/proc/return_to_position()
 	if(wander_loop)
 		qdel(wander_loop)
+		wander_loop = null
 
 	return_loop = SSmove_manager.jps_move(moving = parent_ref, chasing = turf_ref, delay = npc_move_speed, repath_delay = 10 SECONDS, timeout = 1 MINUTES, flags = MOVEMENT_LOOP_START_FAST)
 
@@ -238,3 +324,38 @@
 			SEND_SIGNAL(parent, COMSIG_NPC_RETURN_FINISHED)
 
 	// to do: maybe make idle chatter?
+
+/obj/item/deskbell
+	name = "Bell"
+	desc = "A desk bell, you can alert NPCs with this!"
+	icon = 'modular_coyote/icons/objects/misc.dmi'
+	icon_state = "bell"
+	var/bell_sound = 'sound/ambience/servicebell.ogg'
+	var/assigned_tag = "all"
+	var/sound_range = 7
+
+	var/cooldown_time = 2 SECONDS
+	COOLDOWN_DECLARE(bell_cd)
+
+	
+/obj/item/deskbell/attack_paw(mob/user, list/modifiers)
+	return attack_hand(user, modifiers)
+
+/obj/item/deskbell/attack_hand(mob/user, list/modifiers)
+	. = ..()
+	ring(user)
+
+/obj/item/deskbell/proc/ring(mob/user)
+	if(!COOLDOWN_FINISHED(src,bell_cd))
+		return
+
+	for(var/mob/living/L in ohearers(sound_range, get_turf(src)))
+		SEND_SIGNAL(L, COMSIG_NPC_ALERT_SOUND, user, src, assigned_tag)
+	
+	COOLDOWN_START(src, bell_cd, cooldown_time)
+
+	user.playsound_local(get_turf(src), bell_sound, 50, TRUE)
+	user.visible_message(span_notice("[user] presses the [src]"), span_notice("You press the [src]"))
+	do_jiggle(8, 2)
+// Todo: Allow a pen to label which NPC it's for non case sensitive.
+// /obj/item/deskbell/attackby(obj/item/I, mob/user, params)
